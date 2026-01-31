@@ -1,134 +1,114 @@
-# Zero Shot Reinforcement Learning from Low Quality Data
+# Applying Zero-Shot Reinforcement Learning to Light Transport
 
-## NeurIPS 2024
-<a href="https://github.com/enjeeneer/zero-shot-rl/blob/main/LICENSE"><img alt="License: MIT" src="https://black.readthedocs.io/en/stable/_static/license.svg"></a>
-<a href="https://github.com/psf/black"><img alt="Code style: black" src="https://img.shields.io/badge/code%20style-black-000000.svg"></a>
- [![Paper](http://img.shields.io/badge/paper-arxiv.2309.15178-B31B1B.svg)](https://arxiv.org/abs/2309.15178)
+This repository applies **Zero-Shot Reinforcement Learning (ZSRL)** methods from the paper  
+**_Zero-Shot Reinforcement Learning from Low-Quality Data_** to a **light transport** problem.
 
-<img src="/media/vcfb-intuition-final.png" width=85% height=auto class="center">
+The goal is to demonstrate how ZSRL-style Forward–Backward (FB / CFB) representations can be used
+to reason about **radiance distributions** and **directional rewards** without task-specific retraining.
 
-_Figure 1: Conservative zero-shot RL methods suppress the values or measures on actions not in the  dataset for all tasks. Black dots represent state-action samples present in the dataset._
+---
 
-The is the official codebase for [Zero-Shot Reinforcement Learning from Low Quality Data](https://arxiv.org/abs/2309.15178) by [Scott Jeen](https://enjeeneer.io/), [Tom Bewley](https://tombewley.com/) and [Jonathan Cullen](http://www.eng.cam.ac.uk/profiles/jmc99).
+## Problem Overview: Light Transport
 
-## Summary
+The **light transport** problem can be described as follows:
 
-This work proposes methods for performing zero-shot RL when the pre-training datasets are small and homogeneous. 
-We show that by suppressing the predicted values (or measures) for actions not in the dataset (Figure 1), we can resolve an overestimation bias that arises when the dataset is inexhaustive. We demonstrate this on the ExORL (Figure 2) and D4RL (Figure 3) benchmarks, showing improved performance over existing works.
+- A virtual camera is placed inside a 3D scene.
+- For each pixel in a 2D image plane, a ray is traced into the scene.
+- The ray may bounce multiple times before reaching a light source or terminating.
+- The **pixel intensity** is computed from the accumulated radiance along the ray.
 
-<img src="/media/performance-profiles-subplot2.png" width=85% height=auto class="center">
+From an RL perspective:
 
-_Figure 2: **Aggregate ExORL performance.** (Left) Normalised average performance w.r.t. single-task baseline algorithm CQL. (Right) Performance profiles showing distribution of scores across all tasks and domains. Both conservative FB variants stochastically dominate vanilla FB._
+| Component | Interpretation |
+|---------|----------------|
+| State   | Camera position + surface normal (6D) |
+| Action  | Ray direction (3D) |
+| Reward  | RGB radiance (or luminance) |
+| Policy  | Direction selection strategy |
+| Value   | Expected radiance from a given direction |
 
-<img src="/media/d4rl-performance.png" width=50% height=auto class="center">
+This formulation allows us to apply **offline RL and ZSRL** methods to light transport data.
 
-_Figure 3: **Aggregate D4RL performance.** Normalised average performance w.r.t. single-task baseline algorithm CQL._
+---
 
+## Repository Structure
 
-For further detail check out the paper. Direct any correspondance to [Scott Jeen](https://enjeeneer.io) or raise an issue!
+### Core Files
 
-## Setup
-### Dependencies
-Assuming you have [MuJoCo](https://mujoco.org/) installed, setup a conda env with [Python 3.9.16](https://www.python.org/downloads/release/python-3916/) using `requirements.txt` as usual:
+| File | Description |
+|-----|-------------|
+| `main_exorl.py` | Training pipeline for offline RL / ZSRL agents |
+| `eval_zsrl.py` | Zero-shot evaluation on held-out light transport scenes |
+| `data_loader.py` | Loads `.npz` light transport datasets |
+| `agents/` | Implementation of CQL, FB, CFB, TD3, SF, etc. |
+| `agents/workspaces_lt.py` | Training loop and logging utilities |
+
+---
+
+## Algorithms Implemented
+
+- **CQL** – Conservative Q-Learning  
+- **TD3** – Twin Delayed DDPG  
+- **FB** – Forward–Backward Representation Learning  
+- **CFB (VCFB / MCFB)** – Value-Conservative Forward–Backward  
+- **GCIQL** – Generalized Conservative IQL  
+- **SF** – Successor Features  
+
+Primary algorithm used in experiments:
+
+> **VCFB — Value-Conservative Forward Backward**
+
+---
+
+## Dataset Format
+
+Datasets consist of `.npz` files:
+
 ```
-conda create --name zsrl python=3.9.16
-```
-then install the dependencies from `requirements.txt`:
-```
-pip install -r requirements.txt
+rl_reward_light<ID>_batch_<B>.npz
 ```
 
-## Algorithms
-We provide implementations of the following algorithms: 
+Each file contains:
+- `S`: states `(N, 6)`
+- `A`: actions `(N, 3)`
+- `R`: RGB rewards `(N, 3)`
+- `S_next`: next states `(N, 6)`
 
-| **Algorithm**                                                              | **Authors**                                                    | Type                   | **Command Line Argument** |
-|----------------------------------------------------------------------------|----------------------------------------------------------------|------------------------|--------------------------|
- | Conservative $Q$-learning                                                  | [Kumar et. al (2020)](https://arxiv.org/abs/2006.04779)        | Single-task Offline RL | `cql`                    |
- | Offline TD3                                                                | [Fujimoto et. al (2021)](https://arxiv.org/pdf/2106.06860.pdf) | Single-task Offline RL | `td3`                    |
-| Goal-conditioned Implicit $Q$-Learning (GC-IQL)                            | [Park et. al (2023)](https://arxiv.org/abs/2307.11949)         | Goal-conditioned RL    | `gciql`                  |
-| Universal Successor Features learned with Laplacian Eigenfunctions (SF-LAP) | [Borsa et. al (2018)](https://arxiv.org/abs/1812.07626)        | Zero-shot RL           | `sf-lap`                 |
- | FB Representations                                                         | [Touati et. al (2023)](https://arxiv.org/abs/2209.14935)       |  Zero-shot RL                      | `fb`                     |
- | Value-Conservative FB Representations                                      | [Jeen et. al (2024)](https://arxiv.org/abs/2309.15178)         |  Zero-shot RL                      | `vcfb`                   |
- | Measure-Conservative FB Representations                                    | [Jeen et. al (2024)](https://arxiv.org/abs/2309.15178)         |  Zero-shot RL                      | `mcfb`                   |
+---
 
-## Domains and Datasets
-### ExORL
-In the paper we report results with agents trained on datasets collected from different exploratory algorithms on different domains. The domains are:
+## Training
 
-| **Domain** | **Eval Tasks**                                                              | **Dimensionality** | **Type**      | **Reward** | **Command Line Argument** |
-|--------------|-----------------------------------------------------------------------------|--------------------|---------------|-----------|---------------------------|
-| Walker | `stand` `walk` `run` `flip`                                                 | Low                | Locomotion         | Dense     | `walker`                  |
-| Quadruped | `stand` `roll` `roll_fast` `jump` `escape`                                  | High               | Locomotion         | Dense     | `quadruped`               |
-| Point-mass Maze | `reach_top_left` `reach_top_right` `reach_bottom_left` `reach_bottom_right` | Low                | Goal-reaching      | Sparse    | `point_mass_maze`         |
-| Jaco | `reach_top_left` `reach_top_right` `reach_bottom_left` `reach_bottom_right` | High               | Goal-reaching      | Sparse    | `jaco`                     |
-
-and the dataset collecting algorithms are:
-
-| **Dataset Collecting Algorithm**                                      | **State Coverage** | **Command Line Argument** |
-|-----------------------------------------------------------------------|---------------------------|--------------------------|
- | [Random Network Distillation (RND)](https://arxiv.org/abs/1810.12894) | High                      | `rnd`                    |
- | [Diversity is All You Need (DIAYN)](https://arxiv.org/abs/1802.06070)                                 | Medium                    | `diayn`                  |
- | Random                                                                | Low                       | `random`                 |
-
-State coverage illustrations on `point_mass_maze` are provided in Figure 4. For each domain, datasets need to be downloaded manually from the [ExORL benchmark](https://github.com/denisyarats/exorl/tree/main) then reformatted. 
-To download the `rnd` dataset on the `walker` domain, seperate their command line args with an `_` and run:  
+### Example Command
 
 ```bash
-python exorl_reformatter.py walker_rnd
+CUDA_VISIBLE_DEVICES=0 nohup python main_exorl.py vcfb --seed 42 > test_run_full.log 2>&1 &
 ```
 
-this will create a single `dataset.npz` file in the `dataset/walker/rnd/buffer` directory.
+---
 
-<img src="/media/dataset-heatmap.png" width=70% height=auto class="center">
+## Evaluation (Zero-Shot)
 
-_Figure 4: **State coverage** by dataset on `point_mass_maze`._
-
-To train a standard Value-Conservative Forward Backward Representation with the `rnd` (100k) dataset to solve all tasks in the `walker` domain, run:
 ```bash
-python main_exorl.py vcfb walker rnd --eval_task stand run walk flip
+nohup python eval_zsrl.py \
+  --eval_npz eval_dataset.npz \
+  --model_path agents/cfb/saved_models/<run_name> \
+  --device cuda \
+  --use_reward_weighted_z \
+  --chunk_size 32768 \
+  > eval_zsrl.out 2>&1 &
 ```
 
-### D4RL
-In the paper we report results on:
+### Metrics
+- MSE
+- Mean Spearman correlation
+- Top-1 direction accuracy
 
-| **Domain**     | **Command Line Argument** |
-|----------------|--------------------------|
-| Walker         | `walker`                 |
-| Cheetah        | `cheetah`                |
+---
 
-trained on the following datasets:
+## Normalization
 
-| **Datasets**  | **Description**                                                                                                                                                    | **Command Line Argument** |
-|---------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------|
- | Medium        | Generated by training an SAC policy, early-stopping the training, and collecting 1M samples from this partially-trained policy                                     | `medium`                  |
- | Medium-replay | Generated by recording all samples in the replay buffer observed during training until the policy reaches the “medium” level of performance.                       | `medium-replay`           |
- | Medium-expert | Generated by mixing equal amounts of expert demonstrations and suboptimal data, either from a partially trained policy or by unrolling a uniform-at-random policy. | `medium-expert`           |
+- Dataset-wide normalization is computed during training
+- Statistics are saved to `norm_stats.npz`
+- Evaluation **must reuse the same stats**
 
-You'll need to manually download the D4RL datasets following their instructions, rename them to `dataset.hdf5` and place them in the correct directory inside `/datasets` e.g. the `walker` `medium-expert` dataset should be saved to `datasets/walker/medium-expert/dataset.hdf5`.
-To train a standard Value-Conservative Forward Backward Representation with the `medium-expert` dataset on `walker`, run:
-```bash
-python main_d4rl.py vcfb walker medium-expert
-```
-
-## Citation
-
-If you find this work informative please consider citing the paper!
-
-
-```commandline
-@article{jeen2024,
-  url = {https://arxiv.org/abs/2309.15178},
-  author = {Jeen, Scott and Bewley, Tom and Cullen, Jonathan M.},  
-  title = {Zero-Shot Reinforcement Learning from Low Quality Data},
-  journal = {Advances in Neural Information Processing Systems 38},
-  year = {2024},
-}
-```
-
-## License 
-This work licensed under a standard MIT License, see `LICENSE.md` for further details.
-
-
-
-
-
+---
