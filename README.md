@@ -168,3 +168,8 @@ Specifically, we need to:
 - Verify consistency between training objectives and evaluation criteria
 - Potentially add additional diagnostics (e.g., rank-based metrics, top-k accuracy, distributional similarity)
 
+Questions:
+- Do we need to normalize the z vector during inference?
+- How many (state, reward) pairs to we need to compute the z vector?
+- Metrics? Q refelects cumulative rewards, dataset records radiance which is immediate reward; does compare the two make sense?
+
