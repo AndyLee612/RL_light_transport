@@ -39,6 +39,7 @@ Set up a Conda environment or a python venv with **Python 3.9**:
 conda create --name zsrl python=3.9.16
 conda activate zsrl
 pip install -r requirements.txt
+```
 
 ## Repository Structure
 
