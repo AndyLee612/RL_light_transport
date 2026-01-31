@@ -1,4 +1,5 @@
 import numpy as np
+from tqdm import tqdm 
 
 def load_light_transport_npz(file_path):
     """
@@ -55,7 +56,7 @@ def load_light_transport_npz(file_path):
     r_list = []
     s_next_list = []
 
-    for i in range(N):
+    for i in tqdm(range(N), desc="proc"):
         s_t = transitions['s'][i]
         a_t = transitions['a'][i]
         r_t = transitions['r'][i]

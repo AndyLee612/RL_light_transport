@@ -1,71 +1,16 @@
-# agents/cfb/saved_models/sweep-z50-alpha0_01--seed42/best_model.pt/best-step40000.pickle
-
-# eval_zsrl.py
-# Evaluate a saved FB/CFB ZSRL-style model on eval_dataset.npz (GT radiance distribution)
-# Compares GT luminance rewards over 1024 hemisphere dirs vs predicted Q(s,a,z).
-
-import os
-import glob
 import argparse
 from pathlib import Path
-
 import numpy as np
 import torch
-
 import yaml
+from tqdm import tqdm
 
-from data_loader import load_light_transport_npz
-
-# Agent class is CFB (vcfb/mcfb)
 from agents.cfb.agent import CFB
 
 
 def luminance(rgb: np.ndarray) -> np.ndarray:
     """rgb: (..., 3) -> (...,)"""
     return (0.2126 * rgb[..., 0] + 0.7152 * rgb[..., 1] + 0.0722 * rgb[..., 2]).astype(np.float32)
-
-
-def compute_norm_stats_from_dataset(root_dir: str):
-    """
-    Recompute (state_mean, state_std, action_mean, action_std) from the LT training dataset,
-    to apply the same normalization at eval time.
-    """
-    pattern = os.path.join(root_dir, "rl_reward_light*_batch_*.npz")
-    files = sorted(glob.glob(pattern))
-    if not files:
-        raise FileNotFoundError(f"No dataset files found under: {pattern}")
-
-    all_s, all_a = [], []
-    for fp in files:
-        S, A, _, _ = load_light_transport_npz(fp)  # S: [N,6], A:[N,3]
-        all_s.append(S)
-        all_a.append(A)
-    states = np.concatenate(all_s, axis=0)
-    actions = np.concatenate(all_a, axis=0)
-
-    state_mean = states.mean(axis=0, keepdims=True)
-    state_std = states.std(axis=0, keepdims=True) + 1e-6
-    action_mean = actions.mean(axis=0, keepdims=True)
-    action_std = actions.std(axis=0, keepdims=True) + 1e-6
-
-    return state_mean, state_std, action_mean, action_std
-
-
-def normalize_eval(pos: np.ndarray, normal: np.ndarray, dirs: np.ndarray,
-                   state_mean, state_std, action_mean, action_std):
-    """
-    pos: (K,3), normal:(K,3), dirs:(D,3)
-    returns:
-      states_norm: (K,6)
-      dirs_norm: (D,3)
-    """
-    states = np.concatenate([pos, normal], axis=-1).astype(np.float32)  # (K,6)
-    states_norm = (states - state_mean) / state_std
-
-    dirs = dirs.astype(np.float32)
-    dirs_norm = (dirs - action_mean) / action_std
-
-    return states_norm.astype(np.float32), dirs_norm.astype(np.float32)
 
 
 def load_best_pickle(path: str) -> str:
@@ -90,7 +35,7 @@ def load_best_pickle(path: str) -> str:
     raise FileNotFoundError(f"Invalid model path: {path}")
 
 
-def try_load_agent_weights(agent, pickle_path: str, device: torch.device):
+def try_load_agent_weights(agent, pickle_path: str, device: torch.device) -> None:
     """
     Tries a few common patterns:
       1) agent.load(pickle_path)
@@ -99,22 +44,21 @@ def try_load_agent_weights(agent, pickle_path: str, device: torch.device):
     if hasattr(agent, "load"):
         try:
             agent.load(pickle_path)
-            agent.to(device) if hasattr(agent, "to") else None
+            if hasattr(agent, "to"):
+                agent.to(device)
             return
         except Exception as e:
             print("[Warn] agent.load() failed, falling back to torch.load. Error:", e)
 
     obj = torch.load(pickle_path, map_location=device)
 
-    # If it’s already a state dict:
     if isinstance(obj, dict):
-        # common keys
+        # common nested keys
         for key in ["state_dict", "model", "agent", "fb", "FB"]:
             if key in obj and isinstance(obj[key], dict):
                 obj = obj[key]
                 break
 
-        # Try loading into agent / agent.FB
         loaded = False
         if hasattr(agent, "load_state_dict"):
             try:
@@ -128,8 +72,10 @@ def try_load_agent_weights(agent, pickle_path: str, device: torch.device):
             loaded = True
 
         if not loaded:
+            keys = list(obj.keys())[:50] if isinstance(obj, dict) else []
             raise RuntimeError(
                 "Could not load weights. Your pickle format doesn’t match common patterns.\n"
+                f"Top-level keys (up to 50): {keys}\n"
                 "Open the pickle keys and adjust try_load_agent_weights()."
             )
         return
@@ -137,56 +83,116 @@ def try_load_agent_weights(agent, pickle_path: str, device: torch.device):
     raise RuntimeError(f"Unexpected pickle content type: {type(obj)}")
 
 
+def load_norm_stats(file_path: str):
+    """
+    Load precomputed mean and std from a file.
+    """
+    data = np.load(file_path)
+    state_mean = data['state_mean']
+    state_std = data['state_std']
+    action_mean = data['action_mean']
+    action_std = data['action_std']
+    
+    return state_mean, state_std, action_mean, action_std
+
+
+def normalize_eval(pos: np.ndarray, normal: np.ndarray, dirs: np.ndarray,
+                   state_mean, state_std, action_mean, action_std):
+    """
+    pos: (K,3), normal:(K,3), dirs:(D,3)
+    returns:
+      states_norm: (K,6)
+      dirs_norm: (D,3)
+    """
+    # Normalize states using the precomputed mean and std
+    states = np.concatenate([pos, normal], axis=-1).astype(np.float32)  # (K,6)
+    states_norm = (states - state_mean) / state_std
+
+    dirs = dirs.astype(np.float32)
+    dirs_norm = (dirs - action_mean) / action_std
+
+    return states_norm.astype(np.float32), dirs_norm.astype(np.float32)
+
+
 @torch.no_grad()
-def infer_z_reward_weighted(agent, states_norm_t: torch.Tensor, r_scalar_t: torch.Tensor) -> torch.Tensor:
+def infer_z_reward_weighted(
+    agent, states_t: torch.Tensor, r_scalar_t: torch.Tensor
+) -> torch.Tensor:
     """
     Simple z estimate: z ∝ mean( B(s) * r ).
     Requires agent.FB.backward_representation(states) -> (K, z_dim) or similar.
+    NOTE: states_t is RAW states (no normalization).
     """
     if not hasattr(agent, "FB") or not hasattr(agent.FB, "backward_representation"):
         raise AttributeError("Agent does not expose FB.backward_representation().")
 
-    B = agent.FB.backward_representation(states_norm_t)  # (K, z_dim)
-    # r_scalar_t: (K,) or (K,1)
-    r = r_scalar_t.view(-1, 1)
-    z = (B * r).mean(dim=0)  # (z_dim,)
+    B = agent.FB.backward_representation(states_t)  # (K, z_dim)
+    r = r_scalar_t.view(-1, 1)                      # (K, 1)
+    z = (B * r).mean(dim=0)                         # (z_dim,)
     z = z / (z.norm() + 1e-8)
     return z
 
 
 @torch.no_grad()
-def compute_q_distribution(agent, states_norm: np.ndarray, dirs_norm: np.ndarray, z: torch.Tensor, device):
+def compute_q_distribution_chunked(
+    agent,
+    states: np.ndarray,
+    dirs: np.ndarray,
+    z: torch.Tensor,
+    device: torch.device,
+    chunk_size: int = 131072,
+    use_amp: bool = True,
+) -> np.ndarray:
     """
-    states_norm: (K,6)
-    dirs_norm:   (D,3)
+    states: (K,6) RAW
+    dirs:   (D,3) RAW
     z: (z_dim,)
     returns q: (K,D) using Q(s,a,z) = <F(s,a,z), z> (and average heads if two)
+
+    Chunked over flattened (K*D).
     """
-    K = states_norm.shape[0]
-    D = dirs_norm.shape[0]
+    K = states.shape[0]
+    D = dirs.shape[0]
 
-    s = torch.tensor(states_norm, dtype=torch.float32, device=device)          # (K,6)
-    a = torch.tensor(dirs_norm, dtype=torch.float32, device=device)            # (D,3)
+    s = torch.tensor(states, dtype=torch.float32, device=device)  # (K,6)
+    a = torch.tensor(dirs, dtype=torch.float32, device=device)    # (D,3)
 
-    # Expand to all (K*D)
-    s_rep = s[:, None, :].expand(K, D, 6).reshape(K * D, 6)                    # (K*D,6)
-    a_rep = a[None, :, :].expand(K, D, 3).reshape(K * D, 3)                    # (K*D,3)
-    z_rep = z[None, :].expand(K * D, -1)                                       # (K*D,z)
+    total = K * D
+    q_out = torch.empty((total,), dtype=torch.float32, device="cpu")
 
-    # Forward representation -> (F1, F2) or single
-    out = agent.FB.forward_representation(s_rep, a_rep, z_rep)
+    pbar = tqdm(range(0, total, chunk_size), desc="[Infer] Q(s,a,z) chunks", unit="chunk")
+    for start in pbar:
+        end = min(start + chunk_size, total)
+        p = torch.arange(start, end, device=device)
 
-    if isinstance(out, (tuple, list)) and len(out) >= 2:
-        F1, F2 = out[0], out[1]
-        q1 = (F1 * z_rep).sum(dim=-1)
-        q2 = (F2 * z_rep).sum(dim=-1)
-        q = 0.5 * (q1 + q2)
-    else:
-        F = out
-        q = (F * z_rep).sum(dim=-1)
+        i = torch.div(p, D, rounding_mode="floor")  # (B,)
+        j = p - i * D                                # (B,)
 
-    q = q.view(K, D).detach().cpu().numpy().astype(np.float32)
-    return q
+        s_batch = s[i]                               # (B,6)
+        a_batch = a[j]                               # (B,3)
+        z_batch = z.expand(end - start, -1)           # (B,z)
+
+        if use_amp and device.type == "cuda":
+            autocast_ctx = torch.cuda.amp.autocast(dtype=torch.float16)
+        else:
+            # disabled autocast on non-cuda or when requested
+            autocast_ctx = torch.autocast(device_type=device.type, enabled=False)
+
+        with autocast_ctx:
+            out = agent.FB.forward_representation(s_batch, a_batch, z_batch)
+
+            if isinstance(out, (tuple, list)) and len(out) >= 2:
+                F1, F2 = out[0], out[1]
+                q1 = (F1 * z_batch).sum(dim=-1)
+                q2 = (F2 * z_batch).sum(dim=-1)
+                q = 0.5 * (q1 + q2)
+            else:
+                F = out
+                q = (F * z_batch).sum(dim=-1)
+
+        q_out[start:end] = q.detach().float().cpu()
+
+    return q_out.view(K, D).numpy().astype(np.float32)
 
 
 def spearman_corr(x: np.ndarray, y: np.ndarray) -> float:
@@ -201,51 +207,65 @@ def spearman_corr(x: np.ndarray, y: np.ndarray) -> float:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--eval_npz", type=str, default="eval_dataset.npz")
-    ap.add_argument("--dataset_root", type=str, default="./dataset")
     ap.add_argument("--model_path", type=str, required=True)
     ap.add_argument("--device", type=str, default="cuda")
-    ap.add_argument("--K", type=int, default=128)
-    ap.add_argument("--use_reward_weighted_z", action="store_true",
-                    help="Infer z via z ∝ mean(B(s)*r) using GT radiance at best direction per state.")
+    ap.add_argument(
+        "--use_reward_weighted_z",
+        action="store_true",
+        help="Infer z via z ∝ mean(B(s)*r) using GT radiance at best direction per state.",
+    )
+    ap.add_argument("--z_dim", type=int, default=None, help="Override z dim (default: config z_dimension).")
+    ap.add_argument("--z_seed", type=int, default=0, help="Seed for random z when not inferring.")
+    ap.add_argument("--z_infer_n", type=int, default=16, help="Number of sampled states for reward-weighted z.")
+    ap.add_argument("--chunk_size", type=int, default=131072, help="Chunk size for (K*D) inference.")
+    ap.add_argument("--no_amp", action="store_true", help="Disable AMP autocast on CUDA.")
     args = ap.parse_args()
 
-    device = torch.device(args.device if torch.cuda.is_available() else "cpu")
+    device = torch.device(args.device if (args.device == "cpu" or torch.cuda.is_available()) else "cpu")
     print("[Info] device:", device)
 
     # -------------------------
     # Load eval dataset
     # -------------------------
     data = np.load(args.eval_npz)
-    pos = data["pos"].astype(np.float32)        # (K,3)
-    normal = data["normal"].astype(np.float32)  # (K,3)
-    dirs = data["dirs"].astype(np.float32)      # (D,3)
-    rad = data["radiance_gt"].astype(np.float32)  # (K,res,res,3)
+    pos = data["pos"].astype(np.float32)              # (K,3)
+    normal = data["normal"].astype(np.float32)        # (K,3)
+    dirs = data["dirs"].astype(np.float32)            # (D,3)
+    rad = data["radiance_gt"].astype(np.float32)      # (K,res,res,3)
 
-    K = pos.shape[0]
+    # RAW state/action (no normalization)
+    states = np.concatenate([pos, normal], axis=-1).astype(np.float32)  # (K,6)
+
+    K = states.shape[0]
     res = rad.shape[1]
-    D = res * res
-    rad_flat = rad.reshape(K, D, 3)
-    r_gt = luminance(rad_flat)                  # (K,D)
+    D_dirs = dirs.shape[0]
+    D_rad = res * res
 
-    print("[Eval] K:", K, "D:", D, "dirs:", dirs.shape, "rad:", rad.shape)
+    if D_dirs != D_rad:
+        raise ValueError(
+            f"[Eval] Mismatch: dirs has D={D_dirs}, but radiance_gt implies res*res={D_rad} (res={res}). "
+            "Your eval_npz must be consistent."
+        )
+
+    rad_flat = rad.reshape(K, D_rad, 3)
+    r_gt = luminance(rad_flat)                        # (K,D)
+
+    print("[Eval] K:", K, "D:", D_dirs, "states:", states.shape, "dirs:", dirs.shape, "rad:", rad.shape)
 
     # -------------------------
-    # Norm stats (match training)
+    # Load normalization stats (from training data)
     # -------------------------
-    state_mean, state_std, action_mean, action_std = compute_norm_stats_from_dataset(args.dataset_root)
-    states_norm, dirs_norm = normalize_eval(pos, normal, dirs, state_mean, state_std, action_mean, action_std)
+    state_mean, state_std, action_mean, action_std = load_norm_stats('norm_stats.npz')
 
     # -------------------------
-    # Build agent skeleton (match your training hyperparams!)
+    # Build agent skeleton (match training hyperparams!)
     # -------------------------
-    # Set these to the same as training config
     config_path = "agents/cfb/config.yaml"
-    
     with open(config_path, "rb") as f:
         config = yaml.safe_load(f)
 
-    observation_length = 6      # pos(3) + normal(3)
-    action_length = 3           # direction vector (x, y, z)
+    observation_length = 6
+    action_length = 3
 
     agent = CFB(
         observation_length=observation_length,
@@ -276,9 +296,9 @@ def main():
         std_dev_clip=config["std_dev_clip"],
         std_dev_schedule=config["std_dev_schedule"],
         tau=config["tau"],
-        device=config["device"],
-        vcfb=config["vcfb"],
-        mcfb=config["mcfb"],
+        device=device,
+        vcfb=True,
+        mcfb=False,
         total_action_samples=config["total_action_samples"],
         ood_action_weight=config["ood_action_weight"],
         alpha=config["alpha"],
@@ -292,43 +312,55 @@ def main():
     pickle_path = load_best_pickle(args.model_path)
     print("[Load] using checkpoint:", pickle_path)
     try_load_agent_weights(agent, pickle_path, device)
-    agent.train(False) if hasattr(agent, "train") else None
+    if hasattr(agent, "train"):
+        agent.train(False)
 
     # -------------------------
     # Choose / infer z
     # -------------------------
-    # Default: a random z (useful just to sanity-check plumbing)
-    z = torch.randn(50, device=device)
+    torch.manual_seed(args.z_seed)
+    np.random.seed(args.z_seed)
+
+    z_dim = int(args.z_dim) if args.z_dim is not None else int(config["z_dimension"])
+
+    z = torch.randn(z_dim, device=device)
     z = z / (z.norm() + 1e-8)
 
     if args.use_reward_weighted_z:
-        K = states_norm.shape[0]
-        n = 16 # can use other values (number of sampled states)
+        n = min(args.z_infer_n, K)
         idx = np.random.choice(K, size=n, replace=False)
 
+        # one scalar reward per state: best-direction GT luminance
         r_state = r_gt.max(axis=1).astype(np.float32)  # (K,)
-        s_t = torch.tensor(states_norm[idx], dtype=torch.float32, device=device)
+        s_t = torch.tensor(states[idx], dtype=torch.float32, device=device)  # RAW states
         r_t = torch.tensor(r_state[idx], dtype=torch.float32, device=device)
 
         z = infer_z_reward_weighted(agent, s_t, r_t)
-        print("[z] inferred reward-weighted z (subset), norm=", float(z.norm().cpu()))
-
+        print("[z] inferred reward-weighted z (subset), norm=", float(z.norm().detach().cpu()))
 
     # -------------------------
-    # Predict Q distribution
+    # Predict Q distribution (chunked + tqdm)
     # -------------------------
-    q_pred = compute_q_distribution(agent, states_norm, dirs_norm, z, device)  # (K,D)
+    q_pred = compute_q_distribution_chunked(
+        agent=agent,
+        states=states,          # RAW
+        dirs=dirs,              # RAW
+        z=z,
+        device=device,
+        chunk_size=args.chunk_size,
+        use_amp=(not args.no_amp),
+    )  # (K,D)
 
     # -------------------------
     # Metrics
     # -------------------------
     mse = float(((q_pred - r_gt) ** 2).mean())
 
-    # Spearman per-state then mean
-    spears = [spearman_corr(q_pred[i], r_gt[i]) for i in range(K)]
+    spears = []
+    for i in tqdm(range(K), desc="[Metric] Spearman per-state", unit="state"):
+        spears.append(spearman_corr(q_pred[i], r_gt[i]))
     spear_mean = float(np.mean(spears))
 
-    # Top-1 agreement
     top1_q = q_pred.argmax(axis=1)
     top1_r = r_gt.argmax(axis=1)
     top1_acc = float((top1_q == top1_r).mean())
@@ -340,11 +372,13 @@ def main():
     print("Top-1 direction match rate:", top1_acc)
     print("====================\n")
 
-    # Optional: dump a small debug npz
+    # -------------------------
+    # Save debug
+    # -------------------------
     out = "eval_results_debug.npz"
     np.savez(
         out,
-        states_raw=np.concatenate([pos, normal], axis=-1),
+        states_raw=states,     # already pos+normal
         dirs_raw=dirs,
         rewards_gt=r_gt,
         q_pred=q_pred,
@@ -355,3 +389,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
