@@ -1,15 +1,16 @@
 nohup: ignoring input
 [Info] device: cuda
-[Eval] K: 128 D: 1024 states: (128, 6) dirs: (1024, 3) rad: (128, 32, 32, 3)
+[Eval] K: 128 D: 1024 states_raw: (128, 6) dirs_raw: (1024, 3) rad: (128, 32, 32, 3)
+[Norm] states_norm: (128, 6) dirs_norm: (1024, 3)
 [Load] using checkpoint: agents/cfb/saved_models/sweep-z50-alpha0_01--seed42/best_model.pt/best-step40000.pickle
-[z] inferred reward-weighted z (subset), norm= 1.0
-[Infer] Q(s,a,z) chunks:   0%|          | 0/4 [00:00<?, ?chunk/s][Infer] Q(s,a,z) chunks:  25%|██▌       | 1/4 [00:00<00:01,  1.89chunk/s][Infer] Q(s,a,z) chunks: 100%|██████████| 4/4 [00:00<00:00,  7.03chunk/s]
-[Metric] Spearman per-state:   0%|          | 0/128 [00:00<?, ?state/s][Metric] Spearman per-state: 100%|██████████| 128/128 [00:00<00:00, 1748.01state/s]
+[z] inferred reward-weighted z (subset), norm= 1.0000001192092896
+[Infer] Q(s,a,z) chunks:   0%|          | 0/4 [00:00<?, ?chunk/s][Infer] Q(s,a,z) chunks:  25%|██▌       | 1/4 [00:00<00:00,  6.10chunk/s][Infer] Q(s,a,z) chunks: 100%|██████████| 4/4 [00:00<00:00, 19.60chunk/s]
+[Metric] Spearman per-state:   0%|          | 0/128 [00:00<?, ?state/s][Metric] Spearman per-state: 100%|██████████| 128/128 [00:00<00:00, 2388.92state/s]
 
 === EVAL RESULTS ===
 Q vs GT reward (luminance) distribution
-MSE: 0.640298068523407
-Mean Spearman: 0.005705269541067537
+MSE: 0.6393329501152039
+Mean Spearman: 0.018475060427590506
 Top-1 direction match rate: 0.0
 ====================
 

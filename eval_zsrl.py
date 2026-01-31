@@ -86,29 +86,38 @@ def try_load_agent_weights(agent, pickle_path: str, device: torch.device) -> Non
 def load_norm_stats(file_path: str):
     """
     Load precomputed mean and std from a file.
+    Expected shapes: (1,6), (1,6), (1,3), (1,3)
     """
     data = np.load(file_path)
-    state_mean = data['state_mean']
-    state_std = data['state_std']
-    action_mean = data['action_mean']
-    action_std = data['action_std']
-    
+    state_mean = data["state_mean"].astype(np.float32)
+    state_std = data["state_std"].astype(np.float32)
+    action_mean = data["action_mean"].astype(np.float32)
+    action_std = data["action_std"].astype(np.float32)
     return state_mean, state_std, action_mean, action_std
 
 
-def normalize_eval(pos: np.ndarray, normal: np.ndarray, dirs: np.ndarray,
-                   state_mean, state_std, action_mean, action_std):
+def normalize_states_actions(
+    pos: np.ndarray,
+    normal: np.ndarray,
+    dirs: np.ndarray,
+    state_mean: np.ndarray,
+    state_std: np.ndarray,
+    action_mean: np.ndarray,
+    action_std: np.ndarray,
+):
     """
     pos: (K,3), normal:(K,3), dirs:(D,3)
     returns:
       states_norm: (K,6)
-      dirs_norm: (D,3)
+      dirs_norm:   (D,3)
     """
-    # Normalize states using the precomputed mean and std
     states = np.concatenate([pos, normal], axis=-1).astype(np.float32)  # (K,6)
+
+    # broadcast (1,6) over (K,6)
     states_norm = (states - state_mean) / state_std
 
     dirs = dirs.astype(np.float32)
+    # broadcast (1,3) over (D,3)
     dirs_norm = (dirs - action_mean) / action_std
 
     return states_norm.astype(np.float32), dirs_norm.astype(np.float32)
@@ -121,7 +130,8 @@ def infer_z_reward_weighted(
     """
     Simple z estimate: z ∝ mean( B(s) * r ).
     Requires agent.FB.backward_representation(states) -> (K, z_dim) or similar.
-    NOTE: states_t is RAW states (no normalization).
+
+    IMPORTANT: states_t must be in the SAME space as training (normalized if training normalized).
     """
     if not hasattr(agent, "FB") or not hasattr(agent.FB, "backward_representation"):
         raise AttributeError("Agent does not expose FB.backward_representation().")
@@ -144,8 +154,8 @@ def compute_q_distribution_chunked(
     use_amp: bool = True,
 ) -> np.ndarray:
     """
-    states: (K,6) RAW
-    dirs:   (D,3) RAW
+    states: (K,6) NORMALIZED (match training)
+    dirs:   (D,3) NORMALIZED (match training)
     z: (z_dim,)
     returns q: (K,D) using Q(s,a,z) = <F(s,a,z), z> (and average heads if two)
 
@@ -166,7 +176,7 @@ def compute_q_distribution_chunked(
         p = torch.arange(start, end, device=device)
 
         i = torch.div(p, D, rounding_mode="floor")  # (B,)
-        j = p - i * D                                # (B,)
+        j = p - i * D                               # (B,)
 
         s_batch = s[i]                               # (B,6)
         a_batch = a[j]                               # (B,3)
@@ -175,7 +185,6 @@ def compute_q_distribution_chunked(
         if use_amp and device.type == "cuda":
             autocast_ctx = torch.cuda.amp.autocast(dtype=torch.float16)
         else:
-            # disabled autocast on non-cuda or when requested
             autocast_ctx = torch.autocast(device_type=device.type, enabled=False)
 
         with autocast_ctx:
@@ -209,6 +218,9 @@ def main():
     ap.add_argument("--eval_npz", type=str, default="eval_dataset.npz")
     ap.add_argument("--model_path", type=str, required=True)
     ap.add_argument("--device", type=str, default="cuda")
+
+    ap.add_argument("--norm_stats", type=str, default="norm_stats.npz",
+                    help="Path to training normalization stats npz.")
     ap.add_argument(
         "--use_reward_weighted_z",
         action="store_true",
@@ -233,10 +245,10 @@ def main():
     dirs = data["dirs"].astype(np.float32)            # (D,3)
     rad = data["radiance_gt"].astype(np.float32)      # (K,res,res,3)
 
-    # RAW state/action (no normalization)
-    states = np.concatenate([pos, normal], axis=-1).astype(np.float32)  # (K,6)
+    # RAW state/action for saving/debug
+    states_raw = np.concatenate([pos, normal], axis=-1).astype(np.float32)  # (K,6)
 
-    K = states.shape[0]
+    K = states_raw.shape[0]
     res = rad.shape[1]
     D_dirs = dirs.shape[0]
     D_rad = res * res
@@ -250,12 +262,20 @@ def main():
     rad_flat = rad.reshape(K, D_rad, 3)
     r_gt = luminance(rad_flat)                        # (K,D)
 
-    print("[Eval] K:", K, "D:", D_dirs, "states:", states.shape, "dirs:", dirs.shape, "rad:", rad.shape)
+    print("[Eval] K:", K, "D:", D_dirs, "states_raw:", states_raw.shape, "dirs_raw:", dirs.shape, "rad:", rad.shape)
 
     # -------------------------
-    # Load normalization stats (from training data)
+    # Load normalization stats (from training)
     # -------------------------
-    state_mean, state_std, action_mean, action_std = load_norm_stats('norm_stats.npz')
+    state_mean, state_std, action_mean, action_std = load_norm_stats(args.norm_stats)
+
+    # Normalize states + dirs to match training
+    states_norm, dirs_norm = normalize_states_actions(
+        pos, normal, dirs,
+        state_mean, state_std,
+        action_mean, action_std,
+    )
+    print("[Norm] states_norm:", states_norm.shape, "dirs_norm:", dirs_norm.shape)
 
     # -------------------------
     # Build agent skeleton (match training hyperparams!)
@@ -332,7 +352,9 @@ def main():
 
         # one scalar reward per state: best-direction GT luminance
         r_state = r_gt.max(axis=1).astype(np.float32)  # (K,)
-        s_t = torch.tensor(states[idx], dtype=torch.float32, device=device)  # RAW states
+
+        # IMPORTANT: use NORMALIZED states if training used normalization
+        s_t = torch.tensor(states_norm[idx], dtype=torch.float32, device=device)
         r_t = torch.tensor(r_state[idx], dtype=torch.float32, device=device)
 
         z = infer_z_reward_weighted(agent, s_t, r_t)
@@ -343,8 +365,8 @@ def main():
     # -------------------------
     q_pred = compute_q_distribution_chunked(
         agent=agent,
-        states=states,          # RAW
-        dirs=dirs,              # RAW
+        states=states_norm,     # NORMALIZED
+        dirs=dirs_norm,         # NORMALIZED
         z=z,
         device=device,
         chunk_size=args.chunk_size,
@@ -378,11 +400,18 @@ def main():
     out = "eval_results_debug.npz"
     np.savez(
         out,
-        states_raw=states,     # already pos+normal
+        states_raw=states_raw,
+        states_norm=states_norm,
         dirs_raw=dirs,
+        dirs_norm=dirs_norm,
         rewards_gt=r_gt,
         q_pred=q_pred,
         z=z.detach().cpu().numpy(),
+        norm_stats_path=np.array([args.norm_stats]),
+        state_mean=state_mean,
+        state_std=state_std,
+        action_mean=action_mean,
+        action_std=action_std,
     )
     print("[Saved]", out)
 
