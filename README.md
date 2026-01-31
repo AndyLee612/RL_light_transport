@@ -31,6 +31,37 @@ This formulation allows us to apply **offline RL and ZSRL** methods to light tra
 
 ---
 
+## 📥 Download Dataset
+
+To generate the light transport dataset, please use the official rendering repository:
+
+👉 **Repository:** https://github.com/IntelligentDecisionLab/RL_light_transport  
+
+### Steps
+
+1. Open the script: rendering/scripts/render.py
+
+2. Choose which data to generate by commenting out the corresponding sections:
+
+- **Training data**
+  ```python
+  # Comment out lines 531–563
+  ```
+  This disables evaluation-only rendering and produces **training data**.
+
+- **Evaluation data**
+  ```python
+  # Comment out lines 617–633
+  ```
+  This disables training-only rendering and produces **evaluation data**.
+
+3. Run the rendering script as instructed in the repository to generate the `.npz` files.
+
+### Notes
+- Training and evaluation data are generated **separately** to avoid data leakage.
+- Ensure the correct section is commented out **before** running the renderer.
+- The resulting datasets should be placed in the `dataset/` directory used by the training and evaluation scripts.
+
 ## Dependencies
 
 Set up a Conda environment or a python venv with **Python 3.9**:
@@ -96,17 +127,19 @@ CUDA_VISIBLE_DEVICES=0 nohup python main_exorl.py vcfb --seed 42 > test_run_full
 
 ---
 
-## Evaluation (Zero-Shot)
+## 🧪 Evaluation (Zero-Shot)
 
-```bash
-nohup python eval_zsrl.py \
-  --eval_npz eval_dataset.npz \
-  --model_path agents/cfb/saved_models/<run_name> \
-  --device cuda \
-  --use_reward_weighted_z \
-  --chunk_size 32768 \
-  > eval_zsrl.out 2>&1 &
-```
+During zero-shot evaluation, inputs are normalized using the **same mean and standard deviation computed from the training dataset**.
+
+Normalization statistics are **precomputed offline** using `compute_norm_stats.py` (formerly `compute_mean.py`) and saved as `norm_stats.npz`.  
+At evaluation time, these saved statistics are loaded and applied directly to states and actions before inference.
+
+This ensures:
+- consistent normalization between training and evaluation
+- no need to load the full dataset during evaluation
+- CPU-only, memory-efficient preprocessing
+- no interference with GPU resources used for inference
+
 
 ### Metrics
 - MSE
@@ -122,3 +155,16 @@ nohup python eval_zsrl.py \
 - Evaluation **must reuse the same stats**
 
 ---
+
+## 🛠️ TODO
+
+**Action required for co-authors**
+
+The current evaluation script needs to be **revised and improved** to provide more reliable and informative metrics for the light transport setting.
+
+Specifically, we need to:
+- Review and improve the evaluation metrics used in zero-shot testing
+- Ensure metrics properly reflect **directional distribution quality**, not just pointwise errors
+- Verify consistency between training objectives and evaluation criteria
+- Potentially add additional diagnostics (e.g., rank-based metrics, top-k accuracy, distributional similarity)
+
