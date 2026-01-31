@@ -31,6 +31,15 @@ This formulation allows us to apply **offline RL and ZSRL** methods to light tra
 
 ---
 
+## Dependencies
+
+Set up a Conda environment or a python venv with **Python 3.9**:
+
+```bash
+conda create --name zsrl python=3.9.16
+conda activate zsrl
+pip install -r requirements.txt
+
 ## Repository Structure
 
 ### Core Files
