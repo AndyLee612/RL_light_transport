@@ -129,6 +129,21 @@ CUDA_VISIBLE_DEVICES=0 nohup python main_exorl.py vcfb --seed 42 > test_run_full
 
 ## 🧪 Evaluation (Zero-Shot)
 
+### Example Command (Two Stage: Compute Normalization, Evaluation)
+
+```bash
+CUDA_VISIBLE_DEVICES=-1 nohup python compute_mean.py > proc.out 2>&1 &
+```
+
+```bash
+nohup python eval_zsrl.py \
+  --model_path agents/cfb/saved_models/sweep-z50-alpha0_01--seed42/best_model.pt \
+  --device cuda \
+  --use_reward_weighted_z \
+  --chunk_size 32768 \
+  > eval_zsrl.out 2>&1 &
+```
+
 During zero-shot evaluation, inputs are normalized using the **same mean and standard deviation computed from the training dataset**.
 
 Normalization statistics are **precomputed offline** using `compute_norm_stats.py` (formerly `compute_mean.py`) and saved as `norm_stats.npz`.  
