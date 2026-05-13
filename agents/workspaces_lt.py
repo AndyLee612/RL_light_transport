@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional
 from agents.base import Batch
+from dotenv import load_dotenv
 
 
 class LTOfflineWorkspace:
@@ -44,6 +45,7 @@ class LTOfflineWorkspace:
         # Setup run directory
         # -------------------------
         if self.wandb_logging:
+            load_dotenv()
             wandb.login(key=os.environ.get("WANDB_API_KEY"))
             run = wandb.init(
                 name=self.run_name,
