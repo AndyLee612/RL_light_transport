@@ -1,6 +1,7 @@
 import wandb
 import torch
 import shutil
+import os 
 from os import makedirs
 from loguru import logger
 from tqdm import tqdm
@@ -43,11 +44,12 @@ class LTOfflineWorkspace:
         # Setup run directory
         # -------------------------
         if self.wandb_logging:
+            wandb.login(key=os.environ.get("WANDB_API_KEY"))
             run = wandb.init(
                 name=self.run_name,
                 config=agent_config,
                 tags=[agent.name],
-                reinit=True,
+                reinit="finish_previous",
             )
             model_path = self.model_dir / run.name
         else:
