@@ -1,4 +1,4 @@
-# Applying Zero-Shot Reinforcement Learning to Light Transport
+# Applying Zero-Shot Reinforcement Learning to Light Transport (temporary repo)
 
 This repository applies **Zero-Shot Reinforcement Learning (ZSRL)** methods from the paper  
 **_Zero-Shot Reinforcement Learning from Low-Quality Data_** to a **light transport** problem.
