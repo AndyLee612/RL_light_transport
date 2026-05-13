@@ -215,7 +215,7 @@ def spearman_corr(x: np.ndarray, y: np.ndarray) -> float:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--eval_npz", type=str, default="eval_dataset.npz")
+    ap.add_argument("--eval_npz", type=str, default="./dataset/eval_dataset.npz")
     ap.add_argument("--model_path", type=str, required=True)
     ap.add_argument("--device", type=str, default="cuda")
 

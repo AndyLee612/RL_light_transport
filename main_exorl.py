@@ -23,6 +23,8 @@ from agents.cfb.agent import CFB
 from agents.td3.agent import TD3
 from agents.gciql.agent import GCIQL
 from agents.sf.agent import SF
+from agents.osfb.agent import OneStepFB
+# from agents.osfb.replay_buffer import 
 from utils import set_seed_everywhere
 import numpy as np
 
@@ -39,11 +41,13 @@ def generate_sweep_run_name(config):
         - the 3 sweep hyperparameters
         - the seed
     """
+    # create saved_model directory with run time 
+    time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     zdim = str(config["z_dimension"]).replace(".", "_")
     alpha = str(config["alpha"]).replace(".", "_")
     seed = str(config["seed"])
 
-    return f"sweep-z{zdim}-alpha{alpha}--seed{seed}"
+    return f"sweep-z{zdim}-alpha{alpha}--seed{seed}-{time}"
 
 class LightTransportReplayBuffer:
     """
@@ -69,6 +73,7 @@ class LightTransportReplayBuffer:
         # STEP 1 — Discover dataset files
         # ---------------------------------------------------------
         pattern = os.path.join(root_dir, "rl_reward_light*_batch_*.npz")
+        
         file_list = sorted(glob.glob(pattern))
 
         if len(file_list) == 0:
@@ -131,10 +136,23 @@ class LightTransportReplayBuffer:
             rewards = rewards.astype(np.float32)
 
         # ---------------------------------------------------------
-        # STEP 6 — Store ON CPU (IMPORTANT)
+        # STEP 6 — Compute next_actions (shift by one step)
+        # ---------------------------------------------------------
+        # next_actions[i] = actions[i+1] within the same trajectory.
+        # At terminal steps (discount=0) the value is unused, so we
+        # pad the last entry with zeros.
+        next_actions = np.zeros_like(actions)
+        next_actions[:-1] = actions[1:]
+        # Zero out next_actions at terminal transitions (where the
+        # next step belongs to a different episode)
+        next_actions[is_terminal_np.astype(bool)] = 0.0
+
+        # ---------------------------------------------------------
+        # STEP 7 — Store ON CPU (IMPORTANT)
         # ---------------------------------------------------------
         self.states = torch.tensor(states, dtype=torch.float32)       # CPU
         self.actions = torch.tensor(actions, dtype=torch.float32)     # CPU
+        self.next_actions = torch.tensor(next_actions, dtype=torch.float32)  # CPU
         self.rewards = torch.tensor(rewards, dtype=torch.float32)     # CPU
         self.next_states = torch.tensor(next_states, dtype=torch.float32)
         self.discounts = torch.tensor(discounts_np, dtype=torch.float32)
@@ -144,6 +162,7 @@ class LightTransportReplayBuffer:
         print("=== FINAL REPLAY BUFFER ===")
         print("states:", self.states.shape)
         print("actions:", self.actions.shape)
+        print("next_actions:", self.next_actions.shape)
         print("rewards:", self.rewards.shape)
         print("next_states:", self.next_states.shape)
         print("discounts:", self.discounts.shape)
@@ -164,6 +183,7 @@ class LightTransportReplayBuffer:
             self.rewards[idx].to(self.device),
             self.next_states[idx].to(self.device),
             self.discounts[idx].unsqueeze(-1).to(self.device),
+            self.next_actions[idx].to(self.device),
         )
 
 # ===========================================
@@ -177,9 +197,10 @@ parser = ArgumentParser()
 parser.add_argument("algorithm", type=str)
 parser.add_argument("--wandb_logging", type=str, default="True")
 parser.add_argument("--seed", type=int, default=42)
-parser.add_argument("--alpha", type=float, default=0.01)
+parser.add_argument("--alpha", type=float, default=None)
+parser.add_argument("--cql_alpha", type=float, default=0.01)
 parser.add_argument("--discount", type=float, default=0.98)
-parser.add_argument("--z_dimension", type=int, default=50)
+parser.add_argument("--z_dimension", type=int, default=None)
 parser.add_argument("--weighted_cml", type=bool, default=False)
 parser.add_argument("--total_action_samples", type=int, default=12)
 parser.add_argument("--ood_action_weight", type=float, default=0.5)
@@ -193,7 +214,7 @@ parser.add_argument("--lagrange", type=str, default="True")
 parser.add_argument("--target_conservative_penalty", type=float, default=50.0)
 parser.add_argument("--action_condition_index", type=int)
 parser.add_argument("--action_condition_value", type=float)
-parser.add_argument("--cql_alpha", type=float, default=0.01)
+
 args = parser.parse_args()
 
 if args.wandb_logging == "True":
@@ -221,26 +242,38 @@ if args.action_condition_index is not None:
 else:
     args.action_condition = None
 
+
+
 working_dir = Path.cwd()
+
 if args.algorithm in ("vcfb", "mcfb"):
     algo_dir = "calfb" if "cal" in args.algorithm else "cfb"
     config_path = working_dir / "agents" / algo_dir / "config.yaml"
-    model_dir = working_dir / "agents" / algo_dir / "saved_models"
+    model_dir = working_dir / "agents" / algo_dir / "saved_models" 
 elif args.algorithm in ("sf-lap", "sf-hilp"):
     algo_dir = "sf"
     config_path = working_dir / "agents" / algo_dir / "config.yaml"
     model_dir = working_dir / "agents" / algo_dir / "saved_models"
+elif args.algorithm == "osfb":
+    config_path = working_dir / "agents" / "osfb" / "config.yaml"
+    model_dir = working_dir / "agents" / "osfb" / "saved_models"
 else:
     config_path = working_dir / "agents" / args.algorithm / "config.yaml"
     model_dir = working_dir / "agents" / args.algorithm / "saved_models"
 
-time = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
 
+# load the config file (YAML)
 with open(config_path, "rb") as f:
     config = yaml.safe_load(f)
 
 # Merge CLI arguments (CLI has priority)
-config.update(vars(args))
+# config.update(vars(args))
+
+# (config has priority over args)
+# only update config with args that were explicitly set by user
+cli_args = {k: v for k, v in vars(args).items() 
+            if v is not None}
+config.update(cli_args) 
 
 # Correct run name: call your sweep name generator
 config["run_name"] = generate_sweep_run_name(config)
@@ -383,6 +416,56 @@ elif config["algorithm"] == "fb":
     train_std = config["std_dev_schedule"]
     eval_std = config["std_dev_eval"]
 
+elif config["algorithm"] == "osfb":
+
+    agent = OneStepFB(
+        observation_length=observation_length,
+        action_length=action_length,
+        preprocessor_hidden_dimension=config["preprocessor_hidden_dimension"],
+        preprocessor_output_dimension=config["preprocessor_output_dimension"],
+        preprocessor_hidden_layers=config["preprocessor_hidden_layers"],
+        preprocessor_activation=config["preprocessor_activation"],
+        forward_hidden_dimension=config["forward_hidden_dimension"],
+        forward_hidden_layers=config["forward_hidden_layers"],
+        forward_number_of_features=config["forward_number_of_features"],
+        forward_activation=config["forward_activation"],
+        backward_hidden_dimension=config["backward_hidden_dimension"],
+        backward_hidden_layers=config["backward_hidden_layers"],
+        backward_activation=config["backward_activation"],
+        actor_hidden_dimension=config["actor_hidden_dimension"],
+        actor_hidden_layers=config["actor_hidden_layers"],
+        actor_activation=config["actor_activation"],
+        z_dimension=config["z_dimension"],
+        critic_learning_rate=config["critic_learning_rate"],
+        actor_learning_rate=config["actor_learning_rate"],
+        learning_rate_coefficient=config["learning_rate_coefficient"],
+        orthonormalisation_coefficient=config["orthonormalisation_coefficient"],
+        discount=config["discount"],
+        batch_size=config["batch_size"],
+        z_mix_ratio=config["z_mix_ratio"],
+        gaussian_actor=config["gaussian_actor"],
+        std_dev_clip=config["std_dev_clip"],
+        std_dev_schedule=config["std_dev_schedule"],
+        tau=config["tau"],
+        device=config["device"],
+        name=config["name"],
+        # one-step FB specific
+        repr_agg=config["repr_agg"],
+        q_agg=config["q_agg"],
+        alpha=config["alpha"],
+        normalize_q_loss=config["normalize_q_loss"],
+        const_std=config["const_std"],
+    )
+
+    buffer = LightTransportReplayBuffer(
+        root_dir="./dataset",
+        device=torch.device("cuda"),
+        reward_mode="luminance"
+    )
+
+    z_inference_steps = config["z_inference_steps"]
+    train_std = config["std_dev_schedule"]
+    eval_std = config["std_dev_eval"]
 
 elif config["algorithm"] in ("vcfb", "mcfb"):
 

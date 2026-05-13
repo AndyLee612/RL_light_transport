@@ -165,6 +165,8 @@ class AbstractMLP(torch.nn.Module, metaclass=abc.ABCMeta):
     def activation(self) -> torch.nn:
         if self._activation == "relu":
             return torch.nn.ReLU()
+        elif self._activation == "gelu":
+            return torch.nn.GELU()
         else:
             raise NotImplementedError(f"{self._activation} not implemented.")
 
@@ -515,6 +517,7 @@ class Batch:
         future_observations: observations from an arbitrary *future* step in trajectory
         discounts: future state discounts
         actions: actions from current step in trajectory
+        next_actions: actions from next step in trajectory (used by one-step FB)
         rewards: rewards from transition
         not_dones: not done flags from transition
         physics: dm_control physics parameters
@@ -530,6 +533,7 @@ class Batch:
     actions: torch.Tensor
     rewards: torch.Tensor
     not_dones: torch.Tensor
+    next_actions: Optional[torch.Tensor] = None
     other_observations: Optional[torch.Tensor] = None
     future_observations: Optional[torch.Tensor] = None
     physics: Optional[torch.Tensor] = None
@@ -687,6 +691,7 @@ class OfflineReplayBuffer(AbstractOfflineReplayBuffer):
 
         observations = []
         actions = []
+        next_actions = []
         rewards = []
         next_observations = []
         future_observations = []
@@ -720,6 +725,19 @@ class OfflineReplayBuffer(AbstractOfflineReplayBuffer):
                 )
             )
             physics.append(np.array(episode["physics"][:-1]))
+
+            # --- next_actions: shift actions by one step within the episode ---
+            # episode["action"] has shape [T+1, action_dim]
+            # actions = episode["action"][1:]   => steps 1..T
+            # next_actions = episode["action"][2:] + pad => steps 2..T, then repeat last
+            ep_actions = torch.as_tensor(episode["action"], device=self.device)
+            # ep_actions[2:] gives actions for steps 2..T
+            # ep_actions[-1:] pads the last step (terminal — discount=0 so value is unused)
+            ep_next_actions = torch.cat(
+                [ep_actions[2:], ep_actions[-1:]], dim=0
+            )
+            next_actions.append(ep_next_actions)
+
             # hack the dones (we know last transition is terminal)
             not_done = torch.ones_like(
                 torch.tensor(episode["reward"]), device=self.device
@@ -793,6 +811,7 @@ class OfflineReplayBuffer(AbstractOfflineReplayBuffer):
         # concatenate into storage
         self.storage["observations"] = torch.cat(observations)[sample_indices]
         self.storage["actions"] = torch.cat(actions)[sample_indices]
+        self.storage["next_actions"] = torch.cat(next_actions)[sample_indices]
         self.storage["rewards"] = torch.cat(rewards)[sample_indices]
         self.storage["next_observations"] = torch.cat(next_observations)[sample_indices]
         self.storage["gciql_goals"] = torch.cat(gciql_goals)[sample_indices]
@@ -834,6 +853,9 @@ class OfflineReplayBuffer(AbstractOfflineReplayBuffer):
                 action_condition_idxs
             ]
             self.storage["actions"] = self.storage["actions"][action_condition_idxs]
+            self.storage["next_actions"] = self.storage["next_actions"][
+                action_condition_idxs
+            ]
             self.storage["rewards"] = self.storage["rewards"][action_condition_idxs]
             self.storage["next_observations"] = self.storage["next_observations"][
                 action_condition_idxs
@@ -896,6 +918,7 @@ class OfflineReplayBuffer(AbstractOfflineReplayBuffer):
         return Batch(
             observations=self.storage["observations"][batch_indices],
             actions=self.storage["actions"][batch_indices],
+            next_actions=self.storage["next_actions"][batch_indices],
             rewards=self.storage["rewards"][batch_indices],
             next_observations=self.storage["next_observations"][batch_indices],
             future_observations=self.storage["future_observations"][batch_indices],

@@ -138,7 +138,7 @@ class CQL(SAC):
         # get next actions and evaluate log prob
         with torch.no_grad():
             next_actions, next_actions_log_probs = self.actor(
-                next_observations, sample=True
+                next_observations
             )
             # get Q targets via soft policy evaluation
             target_Q1, target_Q2 = self.critic_target(next_observations, next_actions)

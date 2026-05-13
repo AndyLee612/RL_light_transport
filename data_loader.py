@@ -14,7 +14,7 @@ def load_light_transport_npz(file_path):
     """
 
     data = np.load(file_path)
-
+    
     positions  = data["positions"]     # (N, 3)
     normals    = data["normals"]       # (N, 3)
     directions = data["directions"]    # (N, 3)
@@ -92,7 +92,7 @@ def load_light_transport_npz(file_path):
     return S, A, R, S_next
 
 if __name__ == "__main__":
-    file_path = "rl_reward_batch_0.npz"
+    file_path = "./datasets/rl_reward_batch_0.npz"
     s, a, r, s_next = load_light_transport_npz(file_path)
 
     print("states:", s.shape)

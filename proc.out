@@ -1,5 +1,5 @@
 nohup: ignoring input
-[Norm] streaming stats:   0%|          | 0/3 [00:00<?, ?file/s][Norm] streaming stats:  33%|███▎      | 1/3 [00:17<00:34, 17.02s/file][Norm] streaming stats:  67%|██████▋   | 2/3 [00:33<00:16, 16.74s/file][Norm] streaming stats: 100%|██████████| 3/3 [00:50<00:00, 17.02s/file][Norm] streaming stats: 100%|██████████| 3/3 [00:50<00:00, 16.97s/file]
+[Norm] streaming stats:   0%|          | 0/3 [00:00<?, ?file/s][Norm] streaming stats:  33%|███▎      | 1/3 [00:29<00:59, 29.52s/file][Norm] streaming stats:  67%|██████▋   | 2/3 [01:05<00:33, 33.07s/file][Norm] streaming stats: 100%|██████████| 3/3 [03:15<00:00, 77.32s/file][Norm] streaming stats: 100%|██████████| 3/3 [03:15<00:00, 65.02s/file]
 [Saved] norm_stats.npz
  state_mean: (1, 6) state_std: (1, 6)
  action_mean: (1, 3) action_std: (1, 3)

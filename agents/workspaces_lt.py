@@ -68,7 +68,8 @@ class LTOfflineWorkspace:
         # -------------------------
         for step in tqdm(range(self.learning_steps + 1)):
             # Sample batch
-            s, a, r, s_next, discounts = replay_buffer.sample(agent.batch_size)
+            ## 04232026 fix it with 
+            s, a, r, s_next, discounts,a_n = replay_buffer.sample(agent.batch_size)
             not_dones = (discounts > 0).float()
 
             batch = Batch(
@@ -77,6 +78,7 @@ class LTOfflineWorkspace:
                 rewards=r,
                 next_observations=s_next,
                 discounts=discounts,
+                next_actions=a_n,
                 not_dones=not_dones,
             )
 
@@ -87,7 +89,7 @@ class LTOfflineWorkspace:
             # Periodic evaluation + checkpoint
             # -------------------------
             if step % self.eval_frequency == 0:
-                current_loss = float(train_metrics["train/forward_backward_total_loss"])
+                current_loss = float(train_metrics["train/total_loss"])
 
                 logger.info(f"[Step {step}] Eval: FB Loss = {current_loss:.6f}")
 

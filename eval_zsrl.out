@@ -1,16 +1,20 @@
 nohup: ignoring input
+/mnt/train-data-1-hdd/andy_lee/projects/ZSRL_Light_Transport/.venv/lib/python3.11/site-packages/glfw/__init__.py:917: GLFWError: (65550) b'X11: The DISPLAY environment variable is missing'
+  warnings.warn(message, GLFWError)
 [Info] device: cuda
 [Eval] K: 128 D: 1024 states_raw: (128, 6) dirs_raw: (1024, 3) rad: (128, 32, 32, 3)
 [Norm] states_norm: (128, 6) dirs_norm: (1024, 3)
-[Load] using checkpoint: agents/cfb/saved_models/sweep-z50-alpha0_01--seed42/best_model.pt/best-step40000.pickle
-[z] inferred reward-weighted z (subset), norm= 1.0000001192092896
-[Infer] Q(s,a,z) chunks:   0%|          | 0/4 [00:00<?, ?chunk/s][Infer] Q(s,a,z) chunks:  25%|██▌       | 1/4 [00:00<00:00,  6.10chunk/s][Infer] Q(s,a,z) chunks: 100%|██████████| 4/4 [00:00<00:00, 19.60chunk/s]
-[Metric] Spearman per-state:   0%|          | 0/128 [00:00<?, ?state/s][Metric] Spearman per-state: 100%|██████████| 128/128 [00:00<00:00, 2388.92state/s]
+[Load] using checkpoint: agents/osfb/saved_models/sweep-z50-alpha0_01--seed42/best_model.pt/best-step60000.pickle
+[z] inferred reward-weighted z (subset), norm= 1.0
+[Infer] Q(s,a,z) chunks:   0%|          | 0/4 [00:00<?, ?chunk/s]/mnt/train-data-1-hdd/andy_lee/projects/ZSRL_Light_Transport/eval_zsrl.py:186: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  autocast_ctx = torch.cuda.amp.autocast(dtype=torch.float16)
+[Infer] Q(s,a,z) chunks:  25%|██▌       | 1/4 [00:03<00:10,  3.49s/chunk][Infer] Q(s,a,z) chunks: 100%|██████████| 4/4 [00:03<00:00,  1.14chunk/s]
+[Metric] Spearman per-state:   0%|          | 0/128 [00:00<?, ?state/s][Metric] Spearman per-state:   1%|          | 1/128 [00:00<00:17,  7.07state/s][Metric] Spearman per-state: 100%|██████████| 128/128 [00:00<00:00, 857.89state/s]
 
 === EVAL RESULTS ===
 Q vs GT reward (luminance) distribution
-MSE: 0.6393329501152039
-Mean Spearman: 0.018475060427590506
+MSE: 0.644076943397522
+Mean Spearman: -0.027532103085832205
 Top-1 direction match rate: 0.0
 ====================
 

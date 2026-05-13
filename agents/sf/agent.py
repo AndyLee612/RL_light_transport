@@ -7,7 +7,7 @@ from typing import Tuple, Dict, Optional
 import torch
 import numpy as np
 
-from agents.fb.models import ForwardRepresentation, ActorModel
+from agents.models import ForwardRepresentation, ActorModel
 from agents.sf.models import LaplacianFeatures
 from agents.base import AbstractAgent, Batch, AbstractGaussianActor
 from agents.utils import schedule

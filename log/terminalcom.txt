@@ -1,0 +1,10 @@
+# evaluation
+nohup python eval_zsrl.py \
+  --model_path agents/osfb/saved_models/sweep-z50-alpha0_01--seed42/best_model.pt/ \
+  --device cuda \
+  --use_reward_weighted_z \
+  --chunk_size 32768 \
+  > eval_zsrl.out 2>&1 &
+
+  # train dataset
+  CUDA_VISIBLE_DEVICES=0 nohup python main_exorl.py osfb --seed 42 > test_run_full_osfb_128_layernorm.log 2>&1 &

@@ -61,6 +61,7 @@ class ForwardModel(AbstractMLP):
         hidden_layers: int,
         device: torch.device,
         activation: str,
+        layernorm: bool = False,
     ):
         super().__init__(
             input_dimension=preprocessor_feature_space_dimension
@@ -70,6 +71,7 @@ class ForwardModel(AbstractMLP):
             hidden_layers=hidden_layers,
             activation=activation,
             device=device,
+            layernorm=layernorm,
         )
 
     def forward(self, h: torch.Tensor) -> torch.Tensor:
@@ -99,6 +101,7 @@ class BackwardModel(AbstractMLP):
         hidden_layers: int,
         device: torch.device,
         activation: str,
+        layernorm: bool = False,
     ):
         super().__init__(
             input_dimension=observation_length,
@@ -107,6 +110,7 @@ class BackwardModel(AbstractMLP):
             hidden_layers=hidden_layers,
             activation=activation,
             device=device,
+            layernorm=layernorm,
         )
         self._z_dimension = z_dimension
 
