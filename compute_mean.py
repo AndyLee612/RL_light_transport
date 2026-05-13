@@ -93,4 +93,3 @@ def compute_norm_stats_streaming(dataset_root: str, out_path: str):
     print(" action_mean:", action_mean.shape, "action_std:", action_std.shape)
 
 compute_norm_stats_streaming("./dataset", "norm_stats.npz")
-

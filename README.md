@@ -94,6 +94,7 @@ pip install -r requirements.txt
 - **CFB (VCFB / MCFB)** – Value-Conservative Forward–Backward  
 - **GCIQL** – Generalized Conservative IQL  
 - **SF** – Successor Features  
+- **OSFB**- Onestep-FB
 
 Primary algorithm used in experiments:
 
@@ -121,10 +122,13 @@ Each file contains:
 
 ### Example Command
 
-```bash
-CUDA_VISIBLE_DEVICES=0 nohup python main_exorl.py vcfb --seed 42 > test_run_full.log 2>&1 &
-```
 
+To organize log file in a neaty way, we store the log files in directory `log` with naming convection. For example, in this case we use 
+`method_seed_timestamp.log`
+```bash
+CUDA_VISIBLE_DEVICES=0 nohup python main_exorl.py osfb --seed 42 \
+  > "log/osfb_seed${SEED}_$(date +%Y%m%d_%H%M%S).log" 2>&1 &
+```
 ---
 
 ## 🧪 Evaluation (Zero-Shot)
