@@ -137,7 +137,9 @@ class CQL(SAC):
         # --- Standard SAC loss ---
         # get next actions and evaluate log prob
         with torch.no_grad():
-            next_actions, next_actions_log_probs = self.actor(
+            # self actor forward only returns a squashed distribution object
+            
+            next_actions, next_actions_log_probs = self.actor.sample(
                 next_observations
             )
             # get Q targets via soft policy evaluation
@@ -161,11 +163,11 @@ class CQL(SAC):
                 size=(self.cql_n_samples, self.batch_size, self.action_length),
                 device=self.device,
             ).uniform_(-1, 1)
-            cql_sampled_actions, _ = self.actor(
-                observations.repeat(self.cql_n_samples, 1, 1), sample=True
+            cql_sampled_actions, _ = self.actor.sample(
+                observations.repeat(self.cql_n_samples, 1, 1)
             )  # [cql_n_samples, batch_size, action_length]
-            cql_sampled_next_actions, _ = self.actor(
-                next_observations.repeat(self.cql_n_samples, 1, 1), sample=True
+            cql_sampled_next_actions, _ = self.actor.sample(
+                next_observations.repeat(self.cql_n_samples, 1, 1)
             )  # [cql_n_samples, batch_size, action_length]
 
         # get cql q estimates

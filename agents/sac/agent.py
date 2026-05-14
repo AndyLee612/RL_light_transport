@@ -143,9 +143,10 @@ class SAC(AbstractAgent, metaclass=abc.ABCMeta):
             observation, dtype=torch.float32, device=self.device
         )
         observation = observation.unsqueeze(0)
-
-        action, _ = self.actor(observation, sample=sample)
-
+        if sample==True:
+            action, _ = self.actor.sample(observation, sample=sample)
+        else:
+            action = self.actor(observation).mean
         return action.detach().cpu().numpy().squeeze(0)
 
     def update(self, batch: Batch, step: int) -> Dict[str, float]:
@@ -214,7 +215,7 @@ class SAC(AbstractAgent, metaclass=abc.ABCMeta):
 
         # get next actions and evaluate log prob
         with torch.no_grad():
-            next_actions, log_prob = self.actor(next_observations, sample=True)
+            next_actions, log_prob = self.actor.sample(next_observations)
 
             # get Q targets via soft policy evaluation
             target_Q1, target_Q2 = self.critic_target(next_observations, next_actions)
@@ -252,7 +253,7 @@ class SAC(AbstractAgent, metaclass=abc.ABCMeta):
             metrics: dictionary of metrics for logging
         """
 
-        actions, log_prob = self.actor(observations, sample=True)
+        actions, log_prob = self.actor.sample(observations)
 
         actor_Q1, actor_Q2 = self.critic(observations, actions)
 

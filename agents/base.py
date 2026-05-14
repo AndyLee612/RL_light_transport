@@ -448,7 +448,7 @@ class AbstractGaussianActor(AbstractMLP, metaclass=abc.ABCMeta):
             layernorm=False,
         )
 
-    def forward(self, observation: torch.Tensor):
+    def forward(self, observation: torch.Tensor, flag: bool = False) -> torch.distributions.Distribution:
         """
         Takes observation and returns squashed normal distribution over action space.
         Args:
@@ -470,6 +470,15 @@ class AbstractGaussianActor(AbstractMLP, metaclass=abc.ABCMeta):
 
         return dist
 
+    def sample(self, observation):
+        """
+        create squashed normal distribution from forward
+        return a sample action and associated log prob.
+        """
+        dist=self.forward(observation)
+        action=dist.rsample()
+        log_prob=dist.log_prob(action).sum(dim=-1, keepdim=True)
+        return action, log_prob
 
 class AbstractLogger(metaclass=abc.ABCMeta):
     """

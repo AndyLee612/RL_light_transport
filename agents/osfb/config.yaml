@@ -1,3 +1,5 @@
+
+name: "osfb"
 # training/eval
 batch_size: 1024                # was 512, JAX one-step FB uses 1024
 max_buffer_episodes: 5000
@@ -7,7 +9,7 @@ eval_frequency: 20000
 eval_rollouts: 10
 
 # forward-backward
-name: "one_step_fb"
+
 preprocessor_hidden_dimension: 1024
 preprocessor_hidden_layers: 2
 preprocessor_output_dimension: 512
@@ -33,7 +35,7 @@ critic_learning_rate: 0.001  # was 0.0001
 actor_learning_rate: 0.001
 learning_steps: 1000000
 learning_rate_coefficient: 1
-orthonormalisation_coefficient: 0.01   # was 1, JAX one-step FB uses 0.0
+orthonormalisation_coefficient: 0.3   # was 1, JAX one-step FB uses 0.0
 z_mix_ratio: 0.5
 gaussian_actor: false
 std_dev_clip: 0.3
