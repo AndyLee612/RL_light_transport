@@ -38,16 +38,22 @@ def generate_sweep_run_name(config):
     Generates a run name for sweep experiments.
     Includes:
         - the word 'sweep'
-        - the 3 sweep hyperparameters
-        - the seed
+        - key hyperparameters depends on model(e.g. seed, alpha, z_dimension)
+        - timestamp for uniqueness
     """
-    # create saved_model directory with run time 
     time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    zdim = str(config["z_dimension"]).replace(".", "_")
-    alpha = str(config["alpha"]).replace(".", "_")
-    seed = str(config["seed"])
 
-    return f"sweep-z{zdim}-alpha{alpha}--seed{seed}-{time}"
+    if (config['name']=="cql"):
+        seed = str(config["seed"])
+
+        name=f"sweep--seed{seed}-time{time}"
+    elif(config['name']=="osfb"):
+        zdim = str(config["z_dimension"]).replace(".", "_")
+        alpha = str(config["alpha"]).replace(".", "_")
+        seed = str(config["seed"])
+        name=f"sweep-z{zdim}-alpha{alpha}--seed{seed}-{time}"
+
+    return name
 
 class LightTransportReplayBuffer:
     """
