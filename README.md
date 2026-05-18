@@ -30,6 +30,15 @@ From an RL perspective:
 This formulation allows us to apply **offline RL and ZSRL** methods to light transport data.
 
 ---
+### Files and Directory Overview
+| Component | Type |Interpretation | 
+|---------|----------------|----------------|
+| agents   | directory |contains models |
+| log     | directory | contains log for training |
+| main_exorl.py | file |entry point for training|
+
+
+---
 
 ## 📥 Download Dataset
 
@@ -96,9 +105,7 @@ pip install -r requirements.txt
 - **SF** – Successor Features  
 - **OSFB**- Onestep-FB
 
-Primary algorithm used in experiments:
 
-> **VCFB — Value-Conservative Forward Backward**
 
 ---
 

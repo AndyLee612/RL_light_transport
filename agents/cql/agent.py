@@ -148,7 +148,7 @@ class CQL(SAC):
                 torch.min(target_Q1, target_Q2)
                 - self.alpha.detach() * next_actions_log_probs
             )
-            target_Q = rewards + (not_dones * self.gamma * target_V)
+            target_Q = rewards.unsqueeze(-1) + (not_dones * self.gamma * target_V)
             target_Q = target_Q.detach()
 
         # get current Q estimates
@@ -221,7 +221,7 @@ class CQL(SAC):
             cql_alpha = self.cql_alpha
             cql_alpha_loss = torch.tensor(0.0)
 
-        conservative_penalty = cql_alpha * cql_penalty
+        conservative_penalty = cql_alpha.squeeze() * cql_penalty
 
         critic_loss = critic_loss + conservative_penalty
 
@@ -233,7 +233,7 @@ class CQL(SAC):
         self.critic_optimiser.step()
 
         metrics = {
-            "train/critic_loss": critic_loss.detach().cpu().numpy(),
+            "train/total_loss": critic_loss.detach().cpu().numpy(),
             "train/Q1": current_Q1.mean().detach().cpu().numpy(),
             "train/Q2": current_Q2.mean().detach().cpu().numpy(),
             "train/cql_q1_rand": cql_random_q1.mean().detach().cpu().numpy(),

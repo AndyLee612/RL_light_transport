@@ -63,7 +63,7 @@ class OneStepFB(AbstractAgent):
         const_std: bool = True,
         # ---- loss flavour ----
         loss_type: str = "huber",   # "mse" matches paper, "huber" is the stabilized variant
-        stabilize: bool =  False,  # if True, also normalize F/B and clamp M, Q, grads
+        stabilize: bool =  True,  # if True, also normalize F/B and clamp M, Q, grads
     ):
         super().__init__(
             observation_length=observation_length,

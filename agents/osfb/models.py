@@ -4,7 +4,7 @@ Key change vs original FB:
     - Forward F(s, a) — NO z input, so only ONE preprocessor (obs_action).
     - Backward B(s, a) — action-conditioned.
 """
-
+import math
 from typing import Tuple
 import torch
 
@@ -37,6 +37,7 @@ class OneStepForwardRepresentation(torch.nn.Module):
         forward_activation: str,
     ):
         super().__init__()
+        self._zdim=z_dimension
 
         # Single preprocessor for (obs, action). NO obs_z preprocessor.
         # Original FB API: pass obs and the extra concatenated var as separate sizes.
@@ -79,12 +80,14 @@ class OneStepForwardRepresentation(torch.nn.Module):
         observation: torch.Tensor,
         action: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Run F(s, a). Returns (F1_out, F2_out), each [B, z_dim]."""
-        # Concat obs+action, encode through the preprocessor, then both heads.
         h = self.obs_action_preprocessor(
             torch.cat([observation, action], dim=-1)
         )
-        return self.F1(h), self.F2(h)
+        f1 = self.F1(h)
+        f2 = self.F2(h)
+        f1 = math.sqrt(self._zdim) * torch.nn.functional.normalize(f1, dim=-1)
+        f2 = math.sqrt(self._zdim) * torch.nn.functional.normalize(f2, dim=-1)
+        return f1, f2
 
 
 # =============================================================================
